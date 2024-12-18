@@ -26,5 +26,5 @@ def scale_df_with_scalar_multiplication(df: pd.DataFrame, target_min: int, targe
             scalars.append(scalar)
 
             # Scale values by multiplication and round to integer
-            scaled_df[col] = (scaled_df[col] * scalar).clip(lower=target_min, upper=target_max).round().astype(int)
+            scaled_df[col] = (scaled_df[col] * scalar).round().astype(int)
     return scaled_df, scalars
