@@ -168,8 +168,7 @@ for epoch in range(num_epochs):
                              accuracy=100 * correct_train / total_train)
 
     train_accuracy = 100 * correct_train / total_train
-    logger.info(f"Epoch: {epoch}/{num_epochs}, Train Loss: {epoch_loss /
-                len(train_loader):.4f}, Train Accuracy: {train_accuracy:.2f}%")
+    logger.info(f"Epoch: {epoch}/{num_epochs}, Train Loss: {epoch_loss / len(train_loader):.4f}, Train Accuracy: {train_accuracy:.2f}%")
 
     train_class_accuracy = {}
     train_class_accuracy['epoch'] = epoch
