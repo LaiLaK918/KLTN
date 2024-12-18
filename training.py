@@ -179,8 +179,7 @@ for epoch in range(num_epochs):
 
     epoch_class_accuracy_train = pd.concat(
         [epoch_class_accuracy_train, pd.DataFrame(train_class_accuracy, index=[epoch])])
-    logger.info(f"Epoch: {
-                epoch}/{num_epochs}, Train Class-wise Accuracy:\n {epoch_class_accuracy_train}")
+    logger.info(f"Epoch: {epoch}/{num_epochs}, Train Class-wise Accuracy:\n {epoch_class_accuracy_train}")
 
     writer.add_scalar('Loss/train', epoch_loss / len(train_loader), epoch)
     writer.add_scalar('Accuracy/train', train_accuracy, epoch)
@@ -213,8 +212,7 @@ for epoch in range(num_epochs):
     lr_scheduler.step(val_loss)
     logger.info(
         f"Epoch: {epoch}/{num_epochs}, learning rate: {lr_scheduler.get_last_lr()}")
-    logger.info(f"Epoch: {epoch}/{num_epochs}, Validation Loss: {val_loss /
-                len(val_loader):.4f}, Validation Accuracy: {val_accuracy:.2f}%")
+    logger.info(f"Epoch: {epoch}/{num_epochs}, Validation Loss: {val_loss / len(val_loader):.4f}, Validation Accuracy: {val_accuracy:.2f}%")
 
     val_class_accuracy = {"epoch": epoch}
     val_class_accuracy.update({le.classes_[i]: (
@@ -224,8 +222,7 @@ for epoch in range(num_epochs):
 
     epoch_class_accuracy_val = pd.concat(
         [epoch_class_accuracy_val, pd.DataFrame(val_class_accuracy, index=[epoch])])
-    logger.info(f"Epoch: {
-                epoch}/{num_epochs}, Validation Class-wise Accuracy:\n {epoch_class_accuracy_val}")
+    logger.info(f"Epoch: {epoch}/{num_epochs}, Validation Class-wise Accuracy:\n {epoch_class_accuracy_val}")
 
     writer.add_scalar('Loss/val', val_loss / len(val_loader), epoch)
     writer.add_scalar('Accuracy/val', val_accuracy, epoch)
@@ -240,8 +237,7 @@ for epoch in range(num_epochs):
         no_improve_epochs += 1
 
     if no_improve_epochs >= patience:
-        logger.info(
-            "Early stopping due to no improvement in validation accuracy.")
+        logger.info("Early stopping due to no improvement in validation accuracy.")
         break
 
 train_accuracy_csv_path = os.path.join(log_dir, 'train_class_accuracy.csv')
