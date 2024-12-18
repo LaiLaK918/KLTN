@@ -68,8 +68,7 @@ elif args.scaler == 'scalar':
 le = LabelEncoder()
 y_encoded = le.fit_transform(y)
 
-logger.info(f"Label Encoding: {
-            dict(zip(le.classes_, le.transform(le.classes_)))}")
+logger.info(f"Label Encoding: {dict(zip(le.classes_, le.transform(le.classes_)))}")
 
 X_tensor = torch.tensor(scaled_X.to_numpy(), dtype=torch.long)
 y_tensor = torch.tensor(y_encoded, dtype=torch.long)
