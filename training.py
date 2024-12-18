@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import joblib
-from model import LSTMModel
 from torch.utils.tensorboard import SummaryWriter 
 import os
 import numpy as np
@@ -14,13 +13,23 @@ from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 from datetime import datetime
 from logger import setup_logger
+import argparse
+from models.attention_model import AttentionModel
+from models.lstm import LSTMModel
 
-logger = setup_logger(log_file="logs/training_lstm.log")
+
+parser = argparse.ArgumentParser(description="Train a model with specified epochs.")
+parser.add_argument('--epochs', type=int, default=10, help='Number of epochs for training')
+parser.add_argument('--model', type=str, default='lstm', help='Model to use for training')
+args = parser.parse_args()
+
+
 
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 log_dir = f'./logs/{timestamp}'
 os.makedirs(log_dir, exist_ok=True)
 writer = SummaryWriter(log_dir=log_dir)
+logger = setup_logger(log_file=os.path.join(log_dir, 'train.log'))
 
 logger.info(f"Log directory: {log_dir}")    
 
@@ -45,19 +54,21 @@ def merge_and_stat_label(folder_path, to_exclude: list[str] = [], to_include: li
     return merged_df, label_stats
 
 
-def filter_by_min_count(df, label_column, min_count):
+def filter_by_min_count(df: pd.DataFrame, label_column: str, min_count: int):
     label_counts = df[label_column].value_counts()
     valid_labels = label_counts[label_counts >= min_count].index
     return df[df[label_column].isin(valid_labels)]
 
-def scale_df(df, scalers):
+def scale_df(df: pd.DataFrame, scalers: list[MinMaxScaler]) -> pd.DataFrame:
     scaled_df = df.copy()
     for i, col in enumerate(df.columns):
         scaled_df[col] = scalers[i].fit_transform(df[col].values.reshape(-1, 1))
     return scaled_df
 
 folder_path = 'Datasets/TabularIoTAttacks-2024'
-selected_attacks = ['DoS TCP Flood', 'Recon Port Scan', 'MQTT DDoS Publish Flood', 'MQTT DoS Connect Flood', 'Benign Traffic']
+# selected_attacks = ['Recon OS Scan', 'Benign Traffic']
+selected_attacks = ['DoS TCP Flood', 'Recon Port Scan', 'Recon OS Scan', 'MQTT DDoS Publish Flood', 'MQTT DoS Connect Flood', 'Benign Traffic']
+
 
 merged_df, label_stats = merge_and_stat_label(folder_path, to_include=selected_attacks)
 min_count = 32620
@@ -84,25 +95,29 @@ X_train, X_temp, y_train, y_temp = train_test_split(X_tensor, y_tensor,
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, 
                                                 test_size=0.5, random_state=42, stratify=y_temp)
 
-input_size = 128
 hidden_size = 64
-num_layers = 3
+num_layers = 2
 output_size = len(np.unique(y_encoded))
 bidirectional = False
 
 X_embedding_dims = 64
 column_embedding_dim = 64
+input_size = 128 # X_embedding_dims + column_embedding_dim
 
-model = LSTMModel(input_size, hidden_size, num_classes=output_size,
-                  num_layers=num_layers, bidirectional=bidirectional,
-                  n_features=X.shape[1], X_embedding_dims=X_embedding_dims,
-                  column_embedding_dim=column_embedding_dim, X_range=idx_range)
+if args.model == 'lstm':
+    model = LSTMModel(input_size, hidden_size, num_classes=output_size,
+                    num_layers=num_layers, bidirectional=bidirectional,
+                    n_features=X.shape[1], X_embedding_dims=X_embedding_dims,
+                    column_embedding_dim=column_embedding_dim, X_range=idx_range)
+
+elif args.model == 'attention':
+    model = AttentionModel(output_size, X.shape[1], X_embedding_dims, column_embedding_dim, idx_range, num_heads=1)
 model.to(device)
 logger.info(f"Model information: {model}")
 
 criterion = nn.CrossEntropyLoss() 
-optimizer = optim.AdamW(model.parameters(), lr=1e-5)
-lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=3, verbose=True)
+optimizer = optim.AdamW(model.parameters(), lr=1e-3)
+lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', patience=2, verbose=True, min_lr=1e-7)
 
 
 train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
@@ -126,7 +141,7 @@ joblib.dump(scalers, os.path.join(log_dir, 'min_max_scalers.joblib'))
 
 logger.info("Training started.")
 best_val_accuracy = 0.0
-num_epochs = 20
+num_epochs = args.epochs
 patience = 5
 no_improve_epochs = 0
 
@@ -167,7 +182,12 @@ for epoch in range(num_epochs):
     train_accuracy = 100 * correct_train / total_train
     logger.info(f"Epoch: {epoch}/{num_epochs}, Train Loss: {epoch_loss / len(train_loader):.4f}, Train Accuracy: {train_accuracy:.2f}%")
 
-    train_class_accuracy = {f"Class_{i}": (train_class_correct[i] / train_class_total[i] * 100 if train_class_total[i] > 0 else 0) for i in range(output_size)}
+    train_class_accuracy = {}
+    train_class_accuracy['epoch'] = epoch
+    train_class_accuracy.update({le.classes_[i]: (train_class_correct[i] / train_class_total[i] * 100 if train_class_total[i] > 0 else 0) for i in range(output_size)})
+    train_class_accuracy['overall'] = train_accuracy
+    train_class_accuracy['loss'] = epoch_loss / len(train_loader)
+    
     epoch_class_accuracy_train = pd.concat([epoch_class_accuracy_train, pd.DataFrame(train_class_accuracy, index=[epoch])])
     logger.info(f"Epoch: {epoch}/{num_epochs}, Train Class-wise Accuracy:\n {epoch_class_accuracy_train}")
     
@@ -202,7 +222,12 @@ for epoch in range(num_epochs):
     logger.info(f"Epoch: {epoch}/{num_epochs}, learning rate: {lr_scheduler.get_last_lr()}")
     logger.info(f"Epoch: {epoch}/{num_epochs}, Validation Loss: {val_loss / len(val_loader):.4f}, Validation Accuracy: {val_accuracy:.2f}%")
 
-    val_class_accuracy = {f"Class_{i}": (val_class_correct[i] / val_class_total[i] * 100 if val_class_total[i] > 0 else 0) for i in range(output_size)}
+    val_class_accuracy = {"epoch": epoch}
+    val_class_accuracy.update({le.classes_[i]: (val_class_correct[i] / val_class_total[i] * 100 if val_class_total[i] > 0 else 0) for i in range(output_size)})
+    val_class_accuracy['overall'] = val_accuracy
+    val_class_accuracy['loss'] = val_loss / len(val_loader)
+    
+    
     epoch_class_accuracy_val = pd.concat([epoch_class_accuracy_val, pd.DataFrame(val_class_accuracy, index=[epoch])])
     logger.info(f"Epoch: {epoch}/{num_epochs}, Validation Class-wise Accuracy:\n {epoch_class_accuracy_val}")
     
@@ -255,14 +280,10 @@ test_accuracy = 100 * correct_test / total_test
 logger.info(f"Test Accuracy: {test_accuracy:.2f}%")
 
 logger.info("Classification Report on Test Set:")
-logger.info(classification_report(all_labels, all_preds))
+logger.info(classification_report(all_labels, all_preds, target_names=le.classes_, digits=4))
 
 writer.add_scalar('Accuracy/test', test_accuracy)
 writer.close()
-
-logger.info(classification_report(all_labels, all_preds, 
-                            target_names=np.delete(le.classes_, 4), 
-                            digits=4, labels=[0, 1, 2, 3, 5]))
 
 ax = y.value_counts().plot(kind='bar')
 
